@@ -6,6 +6,17 @@ This document describes the test coverage requirements for the backend and how t
 
 The backend enforces a **70% minimum test coverage** threshold. Pull requests that drop coverage below this threshold will fail CI.
 
+## Backend CI Gates
+
+The backend CI workflow (`.github/workflows/backend-ci.yml`) runs four independent jobs in parallel:
+
+- **Lint** — runs ESLint and fails on any lint error.
+- **Type-check** — runs the TypeScript compiler in no-emit mode and fails on any type error.
+- **Test** — runs the test suite with coverage and fails if overall coverage drops below 70%.
+- **Build** — compiles the backend and fails if the build breaks.
+
+Each job reports a clear failure message so you can tell which gate failed without digging through logs.
+
 ## Running Tests Locally
 
 Run the backend test suite with coverage reporting:
@@ -38,7 +49,7 @@ Confirm the overall coverage meets the 70% minimum before opening a pull request
 
 Reviewers should confirm the following before approving a PR:
 
-- [ ] CI passes, including the coverage threshold check
+- [ ] CI passes, including the lint, type-check, test, and build jobs
 - [ ] New or changed logic is covered by tests
 - [ ] Overall coverage remains at or above 70%
 - [ ] Code follows the ESLint and Prettier configurations
