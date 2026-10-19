@@ -67,6 +67,93 @@ jobs:
             exit 1
           fi
 
+  migrate:
+    name: Migrations (SQLite & PostgreSQL)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run pending migrations (SQLite)
+        env:
+          DB_CLIENT: sqlite3
+          DB_FILENAME: ./ci-migrate.sqlite
+        run: |
+          if ! npm run migrate:latest; then
+            echo "::error::Migration gate failed (SQLite). Run 'npm run migrate:latest' in backend/ and fix the failing migration."
+            exit 1
+          fi
+
+      - name: Verify schema matches expectations (SQLite)
+        env:
+          DB_CLIENT: sqlite3
+          DB_FILENAME: ./ci-migrate.sqlite
+        run: |
+          if ! npm run migrate:verify; then
+            echo "::error::Schema verification failed (SQLite). Ensure migrations produce the expected schema."
+            exit 1
+          fi
+
+      - name: Run pending migrations (PostgreSQL)
+        env:
+          DB_CLIENT: pg
+        run: |
+          if ! npm run migrate:latest; then
+            echo "::error::Migration gate failed (PostgreSQL). Run 'npm run migrate:latest' in backend/ and fix the failing migration."
+            exit 1
+          fi
+
+      - name: Verify schema matches expectations (PostgreSQL)
+        env:
+          DB_CLIENT: pg
+        run: |
+          if ! npm run migrate:verify; then
+            echo "::error::Schema verification failed (PostgreSQL). Ensure migrations produce the expected schema."
+            exit 1
+          fi
+
+      - name: Verify rollback (down) support
+        env:
+          DB_CLIENT: pg
+        run: |
+          if ! npm run migrate:rollback; then
+            echo "::error::Rollback gate failed. Ensure every migration defines a working down() function."
+            exit 1
+          fi
+          if ! npm run migrate:latest; then
+            echo "::error::Re-apply after rollback failed. Migrations must be reversible and re-runnable."
+            exit 1
+          fi
+
   test:
     name: Test & Coverage
     runs-on: ubuntu-latest
@@ -86,6 +173,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run pending migrations before tests
+        env:
+          DB_CLIENT: sqlite3
+          DB_FILENAME: ./ci-test.sqlite
+        run: |
+          if ! npm run migrate:latest; then
+            echo "::error::Migration gate failed. Run 'npm run migrate:latest' in backend/ and fix the failing migration before tests."
+            exit 1
+          fi
 
       - name: Run tests with coverage
         run: |
